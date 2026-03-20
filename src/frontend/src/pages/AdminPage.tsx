@@ -32,14 +32,16 @@ import {
   Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PhotoMetadata } from "../backend";
+import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAddPhoto,
   useDeletePhoto,
   useGetAllPhotos,
+  useInitializeAccessControl,
   useIsAdmin,
   useUpdatePhoto,
 } from "../hooks/useQueries";
@@ -49,22 +51,44 @@ const SKELETON_KEYS = ["sk-1", "sk-2", "sk-3", "sk-4", "sk-5", "sk-6"];
 export default function AdminPage() {
   const { login, clear, loginStatus, identity, isInitializing } =
     useInternetIdentity();
+  const { actor, isFetching: isActorFetching } = useActor();
   const isLoggedIn = !!identity;
   const { data: isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
   const { data: photos, isLoading: isLoadingPhotos } = useGetAllPhotos();
   const addPhoto = useAddPhoto();
   const deletePhoto = useDeletePhoto();
   const updatePhoto = useUpdatePhoto();
+  const initAccess = useInitializeAccessControl();
 
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadDescription, setUploadDescription] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadProgress] = useState(0);
+  const [isInitializing2, setIsInitializing2] = useState(false);
 
   const [editingPhoto, setEditingPhoto] = useState<PhotoMetadata | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  // Track if we've already triggered init for this login session
+  const hasInitialized = useRef(false);
+
+  // When user logs in and actor is ready, call initializeAccessControl
+  useEffect(() => {
+    if (isLoggedIn && actor && !isActorFetching && !hasInitialized.current) {
+      hasInitialized.current = true;
+      setIsInitializing2(true);
+      initAccess.mutate(undefined, {
+        onSettled: () => {
+          setIsInitializing2(false);
+        },
+      });
+    }
+    if (!isLoggedIn) {
+      hasInitialized.current = false;
+    }
+  }, [isLoggedIn, actor, isActorFetching, initAccess.mutate]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -188,13 +212,17 @@ export default function AdminPage() {
     );
   }
 
-  if (isCheckingAdmin) {
+  // Show loading while we initialize access control or check admin status
+  if (isInitializing2 || isCheckingAdmin) {
     return (
       <div
-        className="min-h-screen bg-background flex items-center justify-center"
+        className="min-h-screen bg-background flex flex-col items-center justify-center gap-3"
         data-ocid="admin.loading_state"
       >
         <Loader2 className="h-8 w-8 animate-spin text-gold" />
+        <p className="text-sm text-muted-foreground">
+          {isInitializing2 ? "Setting up access..." : "Checking permissions..."}
+        </p>
       </div>
     );
   }

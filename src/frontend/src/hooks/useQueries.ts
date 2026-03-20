@@ -21,9 +21,28 @@ export function useIsAdmin() {
     queryKey: ["isAdmin"],
     queryFn: async () => {
       if (!actor) return false;
-      return actor.isCallerAdmin();
+      try {
+        return await actor.isCallerAdmin();
+      } catch {
+        return false;
+      }
     },
     enabled: !!actor && !isFetching,
+    retry: false,
+  });
+}
+
+export function useInitializeAccessControl() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      await (actor as any).initializeAccessControl();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+    },
   });
 }
 
